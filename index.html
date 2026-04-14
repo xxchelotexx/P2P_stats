@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor P2P Bolivia - Resumen</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Estilo para los inputs de fecha en modo oscuro */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4 font-sans">
+
+    <div class="max-w-md w-full space-y-4">
+        
+        <div id="api-status" class="bg-gray-800 p-3 rounded-xl flex items-center justify-between border border-gray-700 shadow-lg">
+            <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">Servidor API</span>
+            <div id="status-badge" class="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-700 text-[10px] font-bold uppercase">
+                <div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
+                Verificando...
+            </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
+            
+            <div class="p-6 border-b border-gray-700 bg-gray-800/50">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-blue-400 tracking-tight">Resumen P2P</h2>
+                    <select id="period-selector" class="bg-gray-700 text-xs rounded-lg px-3 py-2 outline-none border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all cursor-pointer">
+                        <option value="hoy">Hoy</option>
+                        <option value="semana">Esta Semana</option>
+                        <option value="mes">Este Mes</option>
+                        <option value="otro">Personalizado</option>
+                    </select>
+                </div>
+
+                <div id="custom-date-range" class="hidden space-y-3 p-4 bg-gray-900/60 rounded-xl border border-gray-700 transition-all">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-1">
+                            <label class="text-[10px] text-gray-500 uppercase font-bold">Fecha Inicio</label>
+                            <input type="date" id="date-start" class="w-full bg-gray-800 text-sm p-2 rounded-md border border-gray-600 focus:border-blue-500 outline-none">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[10px] text-gray-500 uppercase font-bold">Fecha Fin</label>
+                            <input type="date" id="date-end" class="w-full bg-gray-800 text-sm p-2 rounded-md border border-gray-600 focus:border-blue-500 outline-none">
+                        </div>
+                    </div>
+                    <button onclick="fetchSummary('otro')" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95">
+                        CONSULTAR RANGO
+                    </button>
+                </div>
+            </div>
+
+            <div id="content-loader" class="p-12 hidden flex flex-col items-center justify-center space-y-3">
+                <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500"></div>
+                <span class="text-xs text-gray-500 font-medium">Obteniendo datos...</span>
+            </div>
+
+            <div id="data-container" class="p-6 space-y-6">
+                <div class="grid grid-cols-1 gap-4">
+                    <div class="bg-gradient-to-br from-green-900/20 to-transparent p-5 rounded-2xl border border-green-800/30">
+                        <div class="flex justify-between items-start mb-2">
+                            <p class="text-green-400 text-[10px] uppercase font-black tracking-widest">Total Compras</p>
+                            <span class="text-green-500/50 text-xs">▲</span>
+                        </div>
+                        <p id="compras-monto" class="text-3xl font-mono font-bold text-white">0.00</p>
+                        <p id="compras-registros" class="text-gray-500 text-xs mt-1">0 transacciones registradas</p>
+                    </div>
+
+                    <div class="bg-gradient-to-br from-blue-900/20 to-transparent p-5 rounded-2xl border border-blue-800/30">
+                        <div class="flex justify-between items-start mb-2">
+                            <p class="text-blue-400 text-[10px] uppercase font-black tracking-widest">Total Ventas</p>
+                            <span class="text-blue-500/50 text-xs">▼</span>
+                        </div>
+                        <p id="ventas-monto" class="text-3xl font-mono font-bold text-white">0.00</p>
+                        <p id="ventas-registros" class="text-gray-500 text-xs mt-1">0 transacciones registradas</p>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-gray-700">
+                    <div class="flex items-center gap-2 text-gray-500">
+                        <div class="text-[10px] leading-relaxed">
+                            <span class="block font-bold text-gray-400 uppercase">Periodo Consultado:</span>
+                            <span id="periodo-info" class="italic">Cargando información...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-center text-[10px] text-gray-600 font-medium">Chelotex • Monitor P2P Bolivia V2.0</p>
+    </div>
+
+    <script>
+        const API_BASE = 'http://157.151.208.33:5000';
+        const periodSelector = document.getElementById('period-selector');
+        const customRangePanel = document.getElementById('custom-date-range');
+
+        // 1. Verificación de Salud de la API
+        async function checkHealth() {
+            const statusBadge = document.getElementById('status-badge');
+            try {
+                const res = await fetch(`${API_BASE}/`, { method: 'GET', headers: { 'accept': 'application/json' } });
+                if (res.ok) {
+                    statusBadge.innerHTML = `<div class="w-2 h-2 rounded-full bg-green-500"></div> Online`;
+                    statusBadge.className = "flex items-center gap-2 px-3 py-1 rounded-full bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50";
+                }
+            } catch (e) {
+                statusBadge.innerHTML = `<div class="w-2 h-2 rounded-full bg-red-500"></div> Offline`;
+                statusBadge.className = "flex items-center gap-2 px-3 py-1 rounded-full bg-red-900/40 text-red-400 text-[10px] font-bold uppercase border border-red-800/50";
+            }
+        }
+
+        // 2. Cálculo dinámico de fechas
+        function getDates(period) {
+            const now = new Date();
+            let inicio = new Date(now);
+            let fin = new Date(now);
+
+            if (period === 'hoy') {
+                inicio.setHours(0, 0, 0, 0);
+                fin.setHours(23, 59, 59, 999);
+            } 
+            else if (period === 'semana') {
+                const day = now.getDay();
+                // Ajuste para que el lunes sea el día 1 y domingo 7
+                const diffToMonday = now.getDate() - (day === 0 ? 6 : day - 1);
+                inicio.setDate(diffToMonday);
+                inicio.setHours(0, 0, 0, 0);
+                
+                fin.setDate(inicio.getDate() + 6);
+                fin.setHours(23, 59, 59, 999);
+            } 
+            else if (period === 'mes') {
+                inicio.setFullYear(now.getFullYear(), now.getMonth(), 1);
+                inicio.setHours(0, 0, 0, 0);
+                
+                fin.setFullYear(now.getFullYear(), now.getMonth() + 1, 0);
+                fin.setHours(23, 59, 59, 999);
+            }
+            else if (period === 'otro') {
+                const valStart = document.getElementById('date-start').value;
+                const valEnd = document.getElementById('date-end').value;
+                
+                if (!valStart || !valEnd) {
+                    alert("Por favor selecciona ambas fechas para el rango personalizado.");
+                    return null;
+                }
+                return { inicio: `${valStart} 00:00:00`, fin: `${valEnd} 23:59:59` };
+            }
+
+            const format = (d) => {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                const time = d.toTimeString().split(' ')[0];
+                return `${year}-${month}-${day} ${time}`;
+            };
+
+            return { inicio: format(inicio), fin: format(fin) };
+        }
+
+        // 3. Obtención de datos de la API
+        async function fetchSummary(period) {
+            const dates = getDates(period);
+            if (!dates) return;
+
+            const { inicio, fin } = dates;
+            const container = document.getElementById('data-container');
+            const loader = document.getElementById('content-loader');
+            
+            // UI Feedback
+            container.classList.add('hidden');
+            loader.classList.remove('hidden');
+
+            try {
+                const url = `${API_BASE}/resumen?fecha_inicio=${encodeURIComponent(inicio)}&fecha_fin=${encodeURIComponent(fin)}`;
+                const response = await fetch(url, { headers: { 'accept': 'application/json' } });
+                
+                if (!response.ok) throw new Error('Error en la respuesta');
+                
+                const data = await response.json();
+
+                // Formateo de números
+                const fmtMonto = (val) => val.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                document.getElementById('compras-monto').innerText = fmtMonto(data.compras.suma_monto);
+                document.getElementById('compras-registros').innerText = `${data.compras.cantidad_registros} transacciones registradas`;
+                
+                document.getElementById('ventas-monto').innerText = fmtMonto(data.ventas.suma_monto);
+                document.getElementById('ventas-registros').innerText = `${data.ventas.cantidad_registros} transacciones registradas`;
+                
+                document.getElementById('periodo-info').innerText = `${data.periodo.inicio} \n hasta ${data.periodo.fin}`;
+
+            } catch (error) {
+                console.error("Error cargando resumen:", error);
+                document.getElementById('periodo-info').innerText = "Error al conectar con la API.";
+            } finally {
+                container.classList.remove('hidden');
+                loader.classList.add('hidden');
+            }
+        }
+
+        // Listeners
+        periodSelector.addEventListener('change', (e) => {
+            if (e.target.value === 'otro') {
+                customRangePanel.classList.remove('hidden');
+            } else {
+                customRangePanel.classList.add('hidden');
+                fetchSummary(e.target.value);
+            }
+        });
+
+        // Inicio automático
+        checkHealth();
+        fetchSummary('hoy');
+    </script>
+</body>
+</html>

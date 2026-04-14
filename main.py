@@ -198,6 +198,50 @@ def operaciones_por_nickname(
         }
     }
 
+# ─────────────────────────────────────────────────────────────────
+# ENDPOINT 4: Todos los registros (Compras y Ventas) por rango de fechas
+# ─────────────────────────────────────────────────────────────────
+@app.get(
+    "/registros-totales",
+    summary="Obtener todos los registros de compras y ventas en un rango de fechas",
+    tags=["Operaciones"]
+)
+def obtener_todos_los_registros(
+    fecha_inicio: str = Query(..., examples=["2026-04-01 00:00:00"], description="Fecha/hora inicio en GMT-4 (YYYY-MM-DD HH:MM:SS)"),
+    fecha_fin: str = Query(..., examples=["2026-04-07 23:59:59"], description="Fecha/hora fin en GMT-4 (YYYY-MM-DD HH:MM:SS)")
+):
+    """
+    Retorna una lista completa de **todas las compras y ventas** realizadas 
+    dentro del rango de fechas indicado, formateadas en GMT-4.
+    """
+    # 1. Convertir las fechas de entrada (GMT-4) a UTC para la consulta en Mongo
+    inicio_utc = gmt4_to_gmt0(fecha_inicio)
+    fin_utc = gmt4_to_gmt0(fecha_fin)
+
+    db = get_db()
+    filtro = {"hora": {"$gte": inicio_utc, "$lte": fin_utc}}
+
+    # 2. Consultar y formatear (el formateo convierte las fechas de vuelta a GMT-4 para el usuario)
+    compras = [format_record(r) for r in db["Compras_Bybit_P2P"].find(filtro)]
+    ventas = [format_record(r) for r in db["Ventas_Bybit_P2P"].find(filtro)]
+
+    return {
+        "periodo": {
+            "inicio": fecha_inicio + " GMT-4",
+            "fin": fecha_fin + " GMT-4"
+        },
+        "resultados": {
+            "total_registros": len(compras) + len(ventas),
+            "compras": {
+                "cantidad": len(compras),
+                "datos": compras
+            },
+            "ventas": {
+                "cantidad": len(ventas),
+                "datos": ventas
+            }
+        }
+    }
 
 # ─────────────────────────────────────────────────────────────────
 # Health check
